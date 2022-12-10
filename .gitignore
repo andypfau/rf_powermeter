@@ -4,7 +4,7 @@ firmware/Powermeter.X/debug
 firmware/Powermeter.X/dist
 firmware/Powermeter.X/.generated_files
 firmware/Powermeter.X/mcc_generated_files/usb/utilities
-hardware/KiCad/fp-info-cache
-hardware/KiCad/Powermeter-backups
-software/Python/__pyache__
-software/Python/lib/__pyache__
+hardware/KiCad/rev02/fp-info-cache
+hardware/KiCad/rev02/Powermeter-backups
+software/Python/__pyacche__
+software/Python/lib/__pycache__
