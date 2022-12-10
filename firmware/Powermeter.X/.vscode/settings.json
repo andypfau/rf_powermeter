@@ -1,0 +1,7 @@
+{
+    "files.associations": {
+        "*.do": "tcl",
+        "helloworld_basic_io.h": "c",
+        "infrastructure.h": "c"
+    }
+}

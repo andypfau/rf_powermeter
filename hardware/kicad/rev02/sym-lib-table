@@ -1,0 +1,4 @@
+(sym_lib_table
+  (lib (name ".commodities")(type "KiCad")(uri "${KIPRJMOD}/lib/commodities.kicad_sym")(options "")(descr ""))
+  (lib (name ".powermeter")(type "KiCad")(uri "${KIPRJMOD}/lib/powermeter.kicad_sym")(options "")(descr ""))
+)
