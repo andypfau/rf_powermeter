@@ -23,6 +23,7 @@ int vt100_home(char* buffer_5b);
 int vt100_show_cursor(bool show, char* buffer_6b);
 
 bool parse_int(char* buffer, int len, int *result);
+bool parse_hex(char* buffer, int len, uint32_t *result);
 
 
 #endif // HELPERS_H

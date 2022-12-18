@@ -215,6 +215,30 @@ bool parse_int(char* buffer, int len, int *result)
 }
 
 
+bool parse_hex(char* buffer, int len, uint32_t *result)
+{
+    if (len == 0)
+        return 0;
+    
+    *result = 0;
+    for (int i = 0; i < len; i++)
+    {
+        char value;
+        if ((buffer[i] >= '0') && (buffer[i] <= '9'))
+            value = buffer[i] - '0';
+        else if ((buffer[i] >= 'a') && (buffer[i] <= 'f'))
+            value = buffer[i] - 'a';
+        else if ((buffer[i] >= 'A') && (buffer[i] <= 'F'))
+            value = buffer[i] - 'A';
+        else
+            return 0;
+        *result <<= 4;
+        *result += value;
+    }
+    return 1;
+}
+
+
 bool parse_mega(char* buffer, int len, int *result)
 {
     if (len == 0)

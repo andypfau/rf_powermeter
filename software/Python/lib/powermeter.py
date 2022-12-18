@@ -38,6 +38,12 @@ class Powermeter:
     def _receive(self) -> str:
         buf = self.ser.read_until(b'\n')
         return buf.decode('ASCII').strip('\n')
+    
+
+    def reset(self):
+        self.set_averaging(16)
+        self.set_frequency(10e6)
+        self.enable_cal(True)
 
     
     def set_averaging(self, n: int):
@@ -53,6 +59,10 @@ class Powermeter:
         self._send(f'f{hz}\n')
 
     
+    def enable_cal(self, enable: bool = True):
+        self._send(f'm{"1" if enable else "0"}\n')
+
+    
     def measure(self) -> float:
         
         if self.offline:
@@ -61,8 +71,7 @@ class Powermeter:
         try:
             self._send('t')
             buf = self._receive()
-            mdb = float(buf)
-            db = mdb
+            db = float(buf)
             return db
 
         except Exception as ex:
@@ -87,3 +96,9 @@ class Powermeter:
                 raise RuntimeError(f'Unable to query diag ({ex})')
             
         return Powermeter.Diag(v_usb, v_a, temp)
+
+    
+    def write_to_eeprom(self, address: int, word16b: int):
+        assert (address & 0xFFFF) == address, '<address> must be a 16 bit value'
+        assert (word16b & 0xFFFF) == word16b, '<word16b> must be a 16 bit value'
+        self._send(f'w{address:04X}{word16b:04X}\n')

@@ -49,13 +49,23 @@ void mem_read(int address, int size, uint8_t *buffer)
 }
 
 
+void mem_wait(void)
+{
+    while (!mem_done())
+    {
+        // wait...
+    }
+}
+
+
 bool mem_done(void)
 {
     if (Status == I2C1_MESSAGE_COMPLETE) {
         // acknowledged -> done
         return 1;
     }
-    else if (Status != I2C1_MESSAGE_PENDING) {
+    
+    if (Status != I2C1_MESSAGE_PENDING) {
         // try again (ack-polling)
         Status = I2C1_MESSAGE_PENDING;
         I2C1_MasterWriteTRBBuild(&Trb[0], Buffer, 2, MEMORY_ADDR);

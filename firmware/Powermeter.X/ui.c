@@ -5,10 +5,13 @@
 #include "tempsens.h"
 #include "rfsens.h"
 #include "memory.h"
+#include "cal.h"
 #include "helpers.h"
+#include "memory.h"
 
 #include <stdio.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <string.h>
 
 
@@ -33,7 +36,8 @@ static int DiagVUsb, DiagVA;
 static long DiagTemp;
 static char DiagState;
 static int MHz;
-static enum { DispNormal, InputAvg, InputFreq, DispHelp, DispDiag } CurrentMode;
+static bool ApplyCal;
+static enum { DispNormal, InputAvg, InputFreq, InputMem, InputCal, DispHelp, DispDiag } CurrentMode;
 static int Line;
 static int LastCount;
 static bool Remote;
@@ -105,15 +109,15 @@ void render_status(void)
     len += 4;
 
     if (Continuous)
-        memcpy(&(StrBuffer[len]), "Cont", 4);
+        memcpy(&(StrBuffer[len]), "Cnt", 3);
     else if (WaitingForData)
-        memcpy(&(StrBuffer[len]), "Trgd", 4);
+        memcpy(&(StrBuffer[len]), "Trg", 3);
     else
-        memcpy(&(StrBuffer[len]), "Stop", 4);
-    len += 4;
+        memcpy(&(StrBuffer[len]), "Stp", 3);
+    len += 3;
     
-    memcpy(&(StrBuffer[len]), "  Avg x", 7);
-    len += 7;
+    memcpy(&(StrBuffer[len]), "  Avg ", 6);
+    len += 6;
     len += int_to_str(Averages, &(StrBuffer[len]));
     
     memcpy(&(StrBuffer[len]), "  ", 2);
@@ -121,6 +125,11 @@ void render_status(void)
     len += int_to_str(MHz, &(StrBuffer[len]));
     memcpy(&(StrBuffer[len]), " MHz", 4);
     len += 4;
+    
+    if (!ApplyCal) {
+        memcpy(&(StrBuffer[len]), "  Unc", 5);
+        len += 5;
+    }
     
     usb_set_data(StrBuffer, len);
 }
@@ -160,11 +169,16 @@ void render_input(void)
     len += vt100_home(&(StrBuffer[len]));
     
     if (CurrentMode == InputAvg) {
-        memcpy(&(StrBuffer[len]), "Avg: ", 5);
-        len += 5;
+        memcpy(&(StrBuffer[len]), "Avg (1..512): ", 15);
+        len += 15;
     } else if (CurrentMode == InputFreq) {
-        memcpy(&(StrBuffer[len]), "MHz: ", 5);
-        len += 5;
+        memcpy(&(StrBuffer[len]), "MHz (10..8000): ", 16);
+        len += 16;
+    } else if (CurrentMode == InputMem) {
+        // only implemented for remote
+    } else if (CurrentMode == InputCal) {
+        memcpy(&(StrBuffer[len]), "Cal (0/1): ", 11);
+        len += 11;
     }
     
     memcpy(&(StrBuffer[len]), InBuffer, InBufferPos);
@@ -233,6 +247,7 @@ void ui_init(void)
     Continuous = 1;
     Averages = 16;
     AnyUpdate = 0;
+    ApplyCal = 1;
     WaitingForData = 1;
     RedrawNeeded = 0;
     Reading = 0;
@@ -244,6 +259,8 @@ void ui_init(void)
     DiagVUsb = 0;
     DiagTemp = 0;
     Remote = 1;
+    
+    cal_load(MHz);
     
     rf_fsm_run();
     rf_fsm_set_avg(Averages);
@@ -270,6 +287,9 @@ void ui_loop(void)
     switch (CurrentMode) {
         case DispNormal:
             if (rf_fsm_get_mdb(&Reading)) {
+                if (ApplyCal) {
+                    Reading = cal_apply(Reading);
+                }
                 WaitingForData = 0;
                 schedule_redraw(0);
             }
@@ -373,6 +393,8 @@ void ui_loop(void)
         
         case InputAvg:
         case InputFreq:
+        case InputMem:
+        case InputCal:
             if (AnyUpdate) {
                 render_input();
                 AnyUpdate = 0;
@@ -417,6 +439,18 @@ void ui_loop(void)
                     if (!Remote)
                         schedule_redraw(0);
                     break;
+                case 'm':
+                    InBufferPos = 0;
+                    CurrentMode = InputCal;
+                    if (!Remote)
+                        schedule_redraw(0);
+                    break;
+                case 'w':
+                    if (!Remote)
+                        break;
+                    InBufferPos = 0;
+                    CurrentMode = InputMem;
+                    break;
                 case 'h':
                     if (Remote)
                         break;
@@ -434,6 +468,9 @@ void ui_loop(void)
                     rf_fsm_stop();
                     Remote = 1;
                     break;
+                default:
+                    // ignore
+                    break;
             }
             break;
             
@@ -447,6 +484,8 @@ void ui_loop(void)
             
         case InputAvg:
         case InputFreq:
+        case InputMem:
+        case InputCal:
             if (usbCmd == '\n' || usbCmd == '\r') {
                 if (CurrentMode == InputAvg) {
                     int n;
@@ -459,11 +498,32 @@ void ui_loop(void)
                         }
                     }
                 } else if (CurrentMode == InputFreq) {
-                    int n;
-                    if (parse_int(InBuffer, InBufferPos, &n)) {
-                        if ((n >= 10) && (n <= 6000)) {
-                            MHz = n;
+                    int tmp;
+                    if (parse_int(InBuffer, InBufferPos, &tmp)) {
+                        if ((tmp >= 10) && (tmp <= 8000)) {
+                            MHz = tmp;
+                            cal_load(MHz);
                         }
+                    }
+                } else if (CurrentMode == InputMem) {
+                    uint32_t tmp;
+                    if (InBufferPos == 9) {
+                        if (parse_hex(InBuffer, InBufferPos, &tmp)) {
+                            int address = (tmp >> 16) & 0xFFFF;
+                            uint16_t buffer = tmp & 0xFFFF;
+                            if (infra_acquire_i2c()) {
+                                mem_write(address, 2, (uint8_t*)(&buffer));
+                                mem_wait();
+                                infra_release_i2c();
+                            }
+                        }
+                    }
+                } else if (CurrentMode == InputCal) {
+                    if (InBufferPos == 1) {
+                        if (InBuffer[0] == '0')
+                            ApplyCal = 0;
+                        else if (InBuffer[0] == '1')
+                            ApplyCal = 1;
                     }
                 }
                 CurrentMode = DispNormal;

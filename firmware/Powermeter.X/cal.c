@@ -1,4 +1,5 @@
 #include "cal.h"
+#include "memory.h"
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -6,38 +7,69 @@
 #include <math.h>
 
 
-int find_closest_lower_idx(int16_t needle, int16_t haystack[], int haystack_size)
-{
-    int best_idx = 0;
-    int16_t best_err = 0x7FFF;
-    for (int i = 0; i < haystack_size; i++) {
-        int16_t err = abs(needle - haystack[i]);
-        if (err < best_err) {
-            best_idx = i;
-            best_err = err;
-        }
-    }
-    return best_idx;
-}
+#define VAR_SHIFT 1
+#define SLOPE_SHIFT 8
 
 
-uint16_t interpolate(int16_t x, int32_t slope, int32_t offset, int varShift, int facShift)
+#define MEM_ADDR_CAL_DATE 0
+#define MEM_ADDR_CAL_TEMP 4
+#define MEM_ADDR_CAL_DATA_COUNT 6
+#define MEM_ADDR_CAL_FREQ_DATA_START 8
+#define MEM_ADDR_CAL_SLOPE_DATA_START 184
+#define MEM_ADDR_CAL_OFFSET_DATA_START 532
+#define MEM_ADDR_CAL_DATA_END 880
+
+
+static int NumberOfEntries;
+static uint32_t Slope, Offset;
+
+
+int32_t interpolate(int16_t x, int32_t slope, int32_t offset, int varShift, int facShift)
 {
     int32_t xw = ((int32_t)x) << varShift;
     int32_t yw = offset + slope * xw;
-    return (int16_t)(yw >> (varShift+facShift));
+    return yw >> (varShift + facShift);
 }
 
 
 void cal_init(void)
 {
-    // TODO
+    Slope = 0;
+    Offset = 0;
+    
+    mem_read(MEM_ADDR_CAL_DATA_COUNT, 2, (uint8_t*)(&NumberOfEntries));
+    mem_wait();
 }
 
 
-int16_t get_cal(int16_t f)
+void cal_load(int16_t f_mhz)
 {
-    /*int idx = find_closest_lower_idx(f, Frequency_MHz, N_FREQUENCIES);
-    return interpolate(f, Errors_mdB_Slope[idx], Errors_mdB_Offset[idx], VAR_SHIFT, SLOPE_SHIFT);*/
-    return 0; // TODO
+    // find closest address
+    int best_idx = 0;
+    int16_t best_err = 0x7FFF;
+    for (int i = 0; i < NumberOfEntries; i++) {
+        
+        uint16_t f_mhz_mem;
+        mem_read(MEM_ADDR_CAL_FREQ_DATA_START + i*2, 2, (uint8_t*)(&f_mhz_mem));
+        mem_wait();
+        
+        int16_t err = abs(f_mhz - f_mhz_mem);
+        if (err < best_err) {
+            best_idx = i;
+            best_err = err;
+        }
+    }
+    
+    // load cal data
+    mem_read(MEM_ADDR_CAL_SLOPE_DATA_START + best_idx*4, 4, (uint8_t*)(&Slope));
+    mem_wait();
+    mem_read(MEM_ADDR_CAL_OFFSET_DATA_START + best_idx*4, 4, (uint8_t*)(&Offset));
+    mem_wait();
+}
+
+
+int32_t cal_apply(int32_t reading_mdb)
+{
+    return NumberOfEntries;
+    //return interpolate(reading_mdb, Slope, Offset, VAR_SHIFT, SLOPE_SHIFT);
 }
