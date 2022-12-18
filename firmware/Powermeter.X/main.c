@@ -7,6 +7,7 @@
 #include "memory.h"
 #include "ui.h"
 #include "usb.h"
+#include "cal.h"
 
 #include <stdbool.h>
 
@@ -20,6 +21,7 @@ int main(void)
     temp_init();
     rf_init();
     mem_init();
+    cal_init();
     
     infra_enable_supply(1);
     infra_enable_rf(1);
