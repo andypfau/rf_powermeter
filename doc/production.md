@@ -5,7 +5,7 @@ Production
 
 - PCB and stencil: [Aisler 4-layer](https://aisler.net/)
 - Stencil registration tool: [Eurocrictuis ec manual tool](https://www.eurocircuits.de/ec-registration-system-details-platine-schablone/)
-- Tools for pick&place: VAC-12000 vacuum pick&place, [SWIFT S41-20 Binocular Stereo Microscope](https://us.swiftmicroscopes.com/collections/stereo-microscope/products/swift-s41-20-binocular-stereo-microscope-with-10x-20x-and-1w-led-illumination)
+- Tools for pick&place: VAC-12000 vacuum pickup, [SWIFT S41-20 Binocular Stereo Microscope](https://us.swiftmicroscopes.com/collections/stereo-microscope/products/swift-s41-20-binocular-stereo-microscope-with-10x-20x-and-1w-led-illumination)
 - Solder paste: [Chipquik NC191SNL50T5](https://www.chipquik.com/store/product_info.php?products_id=473023) (Sn96.5/Ag3.0/Cu0.5, 217..220 °C melting point, no-clean flux, T5 / 15-25 microns)
 - Vapor phase liquid: [Galden HS240](https://www.solvay.com/en/brands/galden-pfpe) (240 °C boiling point)
 
