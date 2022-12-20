@@ -131,17 +131,19 @@ void rf_fsm_loop(void)
             NewReading = 1;
             AverageAccu = 0;
             
-            if (Continuous)
+            if (Continuous) {
                 AverageAccuCount = 0; // re-start
+                State = 0;
+            }
             else
-                AverageAccuCount = Averages; // stall
-            
-            State = 0;
+                State = 3;
             
             break;
-            
+        
+        case 3:
         default:
-            State = 0;
+            // stall
+            State = 3;
             break;
     }
 }
@@ -149,24 +151,28 @@ void rf_fsm_loop(void)
 
 void rf_fsm_trigger(void)
 {
+    NewReading = 0;
     Continuous = 0;
     AverageAccu = 0;
-    AverageAccuCount = 0; // re-start
+    AverageAccuCount = 0;
+    State = 0; // re-start
 }
 
 
 void rf_fsm_run(void)
 {
+    NewReading = 0;
     Continuous = 1;
     AverageAccu = 0;
-    AverageAccuCount = 0; // re-start
+    AverageAccuCount = 0;
+    State = 0; // re-start
 }
 
 
 void rf_fsm_stop(void)
 {
-    Continuous = 0;
-    AverageAccuCount = Averages; // stall
+    NewReading = 0;
+    State = 3; // stall
 }
 
 
@@ -174,6 +180,7 @@ void rf_fsm_set_avg(int n)
 {
     if (n < 1)
         return;
+    NewReading = 0;
     Averages = n;
     AverageAccu = 0;
     AverageAccuCount = 0; // re-start

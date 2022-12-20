@@ -279,7 +279,7 @@ void ui_init(void)
     
     cal_load(MHz);
     
-    rf_fsm_run();
+    rf_fsm_stop();
     rf_fsm_set_avg(Averages);
     schedule_redraw(1);
     
@@ -304,30 +304,34 @@ void ui_loop(void)
     switch (CurrentMode) {
         case DispNormal:
             if (rf_fsm_get_mdb(&Reading)) {
-                if (ApplyCal) {
+                if (ApplyCal)
                     Reading = cal_apply(Reading);
-                }
+                if (Remote)
+                    render_reading();
                 WaitingForData = 0;
                 schedule_redraw(0);
             }
-            if (RedrawNeeded) {
-                cls();
-                RedrawNeeded = 0;
-                schedule_redraw(0);
-            } else if (AnyUpdate) {
-                switch (Line) {
-                    case 0:
-                        render_reading();
-                        Line = 1;
-                        break;
-                    case 1:
-                        render_status();
-                        Line = 0;
-                        AnyUpdate = 0;
-                        break;
-                    default:
-                        Line = 0;
-                        break;
+            
+            if (!Remote) {
+                if (RedrawNeeded) {
+                    cls();
+                    RedrawNeeded = 0;
+                    schedule_redraw(0);
+                } else if (AnyUpdate) {
+                    switch (Line) {
+                        case 0:
+                            render_reading();
+                            Line = 1;
+                            break;
+                        case 1:
+                            render_status();
+                            Line = 0;
+                            AnyUpdate = 0;
+                            break;
+                        default:
+                            Line = 0;
+                            break;
+                    }
                 }
             }
             break;
@@ -437,6 +441,7 @@ void ui_loop(void)
             switch (usbCmd) {
                 case 27: // escape
                     Remote = 0;
+                    rf_fsm_run();
                     schedule_redraw(1);
                     break;
                 case 'c':

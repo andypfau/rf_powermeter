@@ -70,6 +70,5 @@ void cal_load(int16_t f_mhz)
 
 int32_t cal_apply(int32_t reading_mdb)
 {
-    return NumberOfEntries;
-    //return interpolate(reading_mdb, Slope, Offset, VAR_SHIFT, SLOPE_SHIFT);
+    return interpolate(reading_mdb, Slope, Offset, VAR_SHIFT, SLOPE_SHIFT);
 }
