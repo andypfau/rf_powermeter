@@ -20,7 +20,7 @@
 #define MEM_ADDR_CAL_DATA_END 880
 
 
-static int NumberOfEntries;
+static uint16_t NumberOfEntries;
 static uint32_t Slope, Offset;
 
 

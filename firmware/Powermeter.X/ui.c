@@ -20,7 +20,12 @@ enum UiModeT{ UiModeMain, UiModeDiag, UiModeRemote };
 
 #define MEM_BUF_SIZE 16
 #define STR_BUF_SIZE 64
-#define IN_BUF_SIZE 5
+#define IN_BUF_SIZE  10
+
+
+#define ERROR_INVALID_INPUT    11
+#define ERROR_TEMP_READ_FAILED 21
+#define ERROR_I2C_BUSY         22
 
 
 static char StrBuffer[STR_BUF_SIZE];
@@ -37,10 +42,11 @@ static long DiagTemp;
 static char DiagState;
 static int MHz;
 static bool ApplyCal;
-static enum { DispNormal, InputAvg, InputFreq, InputMem, InputCal, DispHelp, DispDiag } CurrentMode;
+static enum { DispNormal, InputAvg, InputFreq, InputMem, InputCal, DispHelp, DispDiag, DispError } CurrentMode;
 static int Line;
 static int LastCount;
 static bool Remote;
+static uint8_t Error;
 
 
 void cls(void)
@@ -63,7 +69,6 @@ void cls(void)
     }
     
     usb_set_data(StrBuffer, len);
-    RedrawNeeded = 0;
 }
 
 
@@ -188,6 +193,17 @@ void render_input(void)
 }
 
 
+void render_error(void)
+{
+    int len = 0;
+    
+    len += int_to_str(Error, &(StrBuffer[len]));
+    StrBuffer[len++] = '\n';
+    
+    usb_set_data(StrBuffer, len);
+}
+
+
 void render_diag(void)
 {
     int len = 0;
@@ -259,6 +275,7 @@ void ui_init(void)
     DiagVUsb = 0;
     DiagTemp = 0;
     Remote = 1;
+    Error = 0;
     
     cal_load(MHz);
     
@@ -295,6 +312,7 @@ void ui_loop(void)
             }
             if (RedrawNeeded) {
                 cls();
+                RedrawNeeded = 0;
                 schedule_redraw(0);
             } else if (AnyUpdate) {
                 switch (Line) {
@@ -372,8 +390,10 @@ void ui_loop(void)
                         infra_release_i2c();
                         if (temp_ok())
                             DiagTemp = temp_get_result_mdeg();
-                        else
+                        else {
+                            Error = ERROR_TEMP_READ_FAILED;
                             DiagTemp = 0;
+                        }
                         schedule_redraw(0);
                         
                         if (Remote)
@@ -399,6 +419,12 @@ void ui_loop(void)
                 render_input();
                 AnyUpdate = 0;
             }  
+            break;
+           
+        case DispError:
+            render_error();
+            Error = 0;
+            CurrentMode = DispNormal;
             break;
     }
     
@@ -462,6 +488,11 @@ void ui_loop(void)
                     DiagState = 0;
                     abort_scheduled_redraw();
                     break;
+                case 'e':
+                    if (!Remote)
+                        break;
+                    CurrentMode = DispError;
+                    break;
                 case 0:
                 case 'r': // for testing only
                     abort_scheduled_redraw();
@@ -495,28 +526,34 @@ void ui_loop(void)
                             rf_fsm_set_avg(n);
                         } else {
                             // not a power of 2, or out of range
+                            Error = ERROR_INVALID_INPUT;
                         }
-                    }
+                    } else
+                        Error = ERROR_INVALID_INPUT;
                 } else if (CurrentMode == InputFreq) {
                     int tmp;
                     if (parse_int(InBuffer, InBufferPos, &tmp)) {
                         if ((tmp >= 10) && (tmp <= 8000)) {
                             MHz = tmp;
                             cal_load(MHz);
-                        }
-                    }
+                        } else
+                            Error = ERROR_INVALID_INPUT;
+                    } else
+                        Error = ERROR_INVALID_INPUT;
                 } else if (CurrentMode == InputMem) {
-                    uint32_t tmp;
-                    if (InBufferPos == 9) {
+                    if (InBufferPos == 8) {
+                        uint32_t tmp;
                         if (parse_hex(InBuffer, InBufferPos, &tmp)) {
-                            int address = (tmp >> 16) & 0xFFFF;
+                            uint16_t address = (tmp >> 16) & 0xFFFF;
                             uint16_t buffer = tmp & 0xFFFF;
                             if (infra_acquire_i2c()) {
                                 mem_write(address, 2, (uint8_t*)(&buffer));
                                 mem_wait();
                                 infra_release_i2c();
-                            }
-                        }
+                            } else
+                                Error = ERROR_I2C_BUSY;
+                        } else
+                            Error = ERROR_INVALID_INPUT;
                     }
                 } else if (CurrentMode == InputCal) {
                     if (InBufferPos == 1) {
@@ -524,7 +561,10 @@ void ui_loop(void)
                             ApplyCal = 0;
                         else if (InBuffer[0] == '1')
                             ApplyCal = 1;
-                    }
+                        else
+                            Error = ERROR_INVALID_INPUT;
+                    } else
+                        Error = ERROR_INVALID_INPUT;
                 }
                 CurrentMode = DispNormal;
                 schedule_redraw(1);
@@ -533,9 +573,13 @@ void ui_loop(void)
                 InBufferPos++;
                 schedule_redraw(0);
             } else { // overflow
+                Error = ERROR_INVALID_INPUT;
                 CurrentMode = DispNormal;
                 schedule_redraw(1);
             }
+            break;
+        
+        case DispError:
             break;
     }
         

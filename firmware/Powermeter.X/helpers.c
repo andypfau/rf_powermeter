@@ -72,6 +72,8 @@ int int_to_str(long value, char* buffer_11b)
         
         if (part != 0)
             started = 1;
+        if (i == 9)
+            started = 1;
         
         if (started)
             buffer_11b[charCount++] = '0' + part;
@@ -103,6 +105,8 @@ int fixed_to_str(long value, int exponent, char* buffer_12b)
         divider /= 10;
         
         if (part != 0)
+            started = 1;
+        if (i == 9)
             started = 1;
         
         if (started)
@@ -227,9 +231,9 @@ bool parse_hex(char* buffer, int len, uint32_t *result)
         if ((buffer[i] >= '0') && (buffer[i] <= '9'))
             value = buffer[i] - '0';
         else if ((buffer[i] >= 'a') && (buffer[i] <= 'f'))
-            value = buffer[i] - 'a';
+            value = buffer[i] + 0xA - 'a';
         else if ((buffer[i] >= 'A') && (buffer[i] <= 'F'))
-            value = buffer[i] - 'A';
+            value = buffer[i] + 0xA - 'A';
         else
             return 0;
         *result <<= 4;

@@ -7,11 +7,10 @@
 #define DATA_SIZE 64
 
 static uint8_t RxBuffer[BUFFER_SIZE];
-static uint8_t TxBuffer[BUFFER_SIZE];
 
 static uint8_t RxData[DATA_SIZE];
 static uint8_t TxData[DATA_SIZE];
-static int RxDataSize;
+static int RxDataStart, RxDataSize;
 static int TxDataSize;
 
 static bool CommunicationStarted;
@@ -19,6 +18,7 @@ static bool CommunicationStarted;
 
 void usb_init(void)
 {
+    RxDataStart = 0;
     RxDataSize = 0;
     TxDataSize = 0;
     CommunicationStarted = 0;
@@ -48,14 +48,15 @@ void usb_set_data(char *buffer, int size)
 int usb_get_data(char *buffer, int max_size)
 {
     int result = 0;
-    for (int i = 0; i < RxDataSize; i++)
+    for (int i = 0; i < max_size; i++)
     {
-        if (i >= max_size)
+        if (RxDataSize == 0)
             break;
-        buffer[i] = (char)RxData[i];
+        buffer[i] = (char)RxData[RxDataStart];
         result = i + 1;
+        RxDataStart = (RxDataStart + 1) % DATA_SIZE;
+        RxDataSize--;
     }
-    RxDataSize = 0;
     return result;
 }
 
@@ -75,25 +76,20 @@ void usb_loop(void)
     if( USBUSARTIsTxTrfReady() == true)
     {
         uint8_t nBytesReceived;
-        uint8_t iRx, iTx;
+        uint8_t iRx;
 
         nBytesReceived = getsUSBUSART(RxBuffer, sizeof(RxBuffer));
         
         if (nBytesReceived != 0)
             CommunicationStarted = 1;
         
-        iTx = 0;
-        for(iRx = 0; iRx < nBytesReceived; iRx++)
-        {
-            RxData[0] = RxBuffer[iRx];
-            RxDataSize = 1;
+        for(iRx = 0; iRx < nBytesReceived; iRx++) {
+            RxData[(RxDataStart+RxDataSize) % DATA_SIZE] = RxBuffer[iRx];
+            RxDataSize++;
         }
 
         if (CommunicationStarted) {
-            if(iTx > 0) {
-                putUSBUSART(TxBuffer, iTx);
-            }
-            else if(TxDataSize > 0) {
+            if(TxDataSize != 0) {
                 putUSBUSART(TxData, TxDataSize);
                 TxDataSize = 0;
             }
