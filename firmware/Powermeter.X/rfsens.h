@@ -15,6 +15,7 @@ int rf_get_avg(void);
 void rf_trigger(void);
 void rf_run(void);
 void rf_stop(void);
+void rf_resume(void);
 void rf_set_avg(int n);
 bool rf_get_mdb(long *reading);
 

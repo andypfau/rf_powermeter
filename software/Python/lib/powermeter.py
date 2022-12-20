@@ -5,9 +5,14 @@ from dataclasses import dataclass
 MEM_MAX_ENTRIES = 1638
 
 MEM_ADDR_CAL_DATA_COUNT        = 0x0000
+MEM_ADDR_CAL_VAR_SHIFT         = 0x0002
+MEM_ADDR_CAL_SLOPE_SHIFT       = 0x0004
 MEM_ADDR_CAL_FREQ_DATA_START   = 0x4000
 MEM_ADDR_CAL_SLOPE_DATA_START  = 0x8000
 MEM_ADDR_CAL_OFFSET_DATA_START = 0xC000
+
+CAL_VARIABLE_SHIFT = 1
+CAL_SLOPE_SHIFT    = 8
 
 
 def is_power_of_2(i: int) -> bool:
@@ -133,11 +138,12 @@ class Powermeter:
     def _write_to_eeprom(self, address: int, data_16b: int):
         assert (address & 0xFFFF) == address, '<address> must be a 16 bit value'
         assert (data_16b & 0xFFFF) == data_16b, '<data_16b> must be a 16 bit value'
-        self._send(f'w{address:04X}{data_16b:04X}\n')
-        #self._check_for_errors()
+        #self._send(f'w{address:04X}{data_16b:04X}\n')
+        print(f'>>> [0x{address:04X}] <- 0x{data_16b:04X}')
+        self._check_for_errors()
 
     
-    def _prepare_cal_data(self, frequencies_hz: "list[float]", errors_db: "list[float]") -> "tuple[list[float],list[float],list[float]]":
+    def _prepare_cal_data(self, frequencies_hz: "list[float]", errors_db: "list[float]") -> "tuple[int,int,list[int],list[int],list[int]]":
         
         if len(frequencies_hz) != len(errors_db):
             raise ValueError(f'Number of entries must be the same for both lists')
@@ -150,25 +156,34 @@ class Powermeter:
             if frequencies_hz[i-1] >= frequencies_hz[i]:
                 raise ValueError(f'Frequency list must be monotonic (check index {i})')
 
-            f_mhz = int(round(frequencies_hz[i]/1e6))
-            slope = int(round((errors_db[i] - errors_db[i-1]) / (frequencies_hz[i] - frequencies_hz[i-1])))
-            offset = int(round(errors_db[i] - round(slope) * slope))
+            f_mhz = frequencies_hz[i]/1e6
+            err_mdb = 1e3 * errors_db[i]
+            d_err_mdb = 1e3 * (errors_db[i] - errors_db[i-1])
+            d_f_mhz = (frequencies_hz[i] - frequencies_hz[i-1]) / 1e6
 
-            freqs.append(f_mhz)
-            slopes.append(slope)
-            offsets.append(offset)    
+            exp_var = 2**CAL_VARIABLE_SHIFT
+            exp_slope = 2**CAL_SLOPE_SHIFT
+            
+            slope = d_err_mdb / d_f_mhz * exp_slope
+            offset = (exp_slope * err_mdb - round(slope) * f_mhz) * exp_var
+
+            freqs.append(int(round(f_mhz)))
+            slopes.append(int(round(slope)))
+            offsets.append(int(round(offset)))
         
-        return freqs, slopes, offsets
+        return CAL_VARIABLE_SHIFT, CAL_SLOPE_SHIFT, freqs, slopes, offsets
 
 
     def write_cal_cata(self, frequencies_hz: "list[float]", errors_db: "list[float]"):
 
-        freqs, slopes, offsets = self._prepare_cal_data(frequencies_hz, errors_db)
+        var_shift, slope_shit, freqs, slopes, offsets = self._prepare_cal_data(frequencies_hz, errors_db)
         n = len(freqs)
-        
+
         assert 0 < n <= MEM_MAX_ENTRIES
 
         self._write_to_eeprom(MEM_ADDR_CAL_DATA_COUNT, n)
+        self._write_to_eeprom(MEM_ADDR_CAL_VAR_SHIFT, var_shift)
+        self._write_to_eeprom(MEM_ADDR_CAL_SLOPE_SHIFT, slope_shit)
         for i,freq in enumerate(freqs):
             self._write_to_eeprom(MEM_ADDR_CAL_FREQ_DATA_START + i*2, freq)
         for i,slope in enumerate(slopes):

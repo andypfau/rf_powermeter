@@ -174,6 +174,13 @@ void rf_stop(void)
 }
 
 
+void rf_resume(void)
+{
+    if (Continuous)
+        rf_run();
+}
+
+
 bool rf_waiting(void)
 {
     return WaitingForData;

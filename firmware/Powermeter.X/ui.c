@@ -216,10 +216,11 @@ void ui_loop(void)
             switch (usbCmd) {
                 case 27: // escape
                     Remote = 0;
-                    rf_run();
+                    rf_resume();
                     State = Redraw;
                     break;
                 case 'a':
+                    rf_stop();
                     InBufferPos = 0;
                     State = InputAvg;
                     break;
@@ -230,26 +231,33 @@ void ui_loop(void)
                     }
                     break;
                 case 'd':
+                    rf_stop();
                     State = DispDiag;
                     DiagFsmState = 0;
                     break;
                 case 'e':
-                    if (Remote)
+                    if (Remote) {
+                        rf_stop();
                         State = DispError;
+                    }
                     break;
                 case 't':
                     rf_trigger();
                     State = DispStatus;
                     break;
                 case 'f':
+                    rf_stop();
                     InBufferPos = 0;
                     State = InputFreq;
                     break;
                 case 'h':
-                    if (!Remote)
+                    if (!Remote) {
+                        rf_stop();
                         State = DispHelp;
+                    }
                     break;
                 case 'm':
+                    rf_stop();
                     InBufferPos = 0;
                     State = InputCal;
                     break;
@@ -262,6 +270,7 @@ void ui_loop(void)
                     break;
                 case 'w':
                     if (Remote) {
+                        rf_stop();
                         InBufferPos = 0;
                         State = InputMem;
                     }
@@ -330,12 +339,14 @@ void ui_loop(void)
                     } else
                         Error = ERROR_INVALID_INPUT;
                 }
+                rf_resume();
                 State = Redraw;
             } else if (InBufferPos < IN_BUF_SIZE) {
                 InBuffer[InBufferPos] = usbCmd;
                 InBufferPos++;
             } else { // overflow
                 Error = ERROR_INVALID_INPUT;
+                rf_resume();
                 State = Redraw;
             }
             break;
