@@ -6,20 +6,17 @@
 
 
 void rf_init(void);
+void rf_loop(void);
 
-void rf_convert(void);
-bool rf_done(void);
-int rf_get_raw_result(void);
-long rf_convert_to_mdb(long raw, int extra_rsh);
-long rf_get_mdb(void);
+bool rf_waiting(void);
+bool rf_continuous(void);
+int rf_get_avg(void);
 
-void rf_fsm_loop(void);
-void rf_fsm_trigger(void);
-void rf_fsm_run(void);
-void rf_fsm_stop(void);
-void rf_fsm_set_avg(int n);
-bool rf_fsm_get_mdb(long *reading);
-long rf_fsm_get_mdb_async(void);
+void rf_trigger(void);
+void rf_run(void);
+void rf_stop(void);
+void rf_set_avg(int n);
+bool rf_get_mdb(long *reading);
 
 
 #endif	/* RFSENS_H */

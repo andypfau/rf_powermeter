@@ -9,26 +9,13 @@ static int32_t AverageAccu;
 static int AverageAccuCount;
 static int32_t RawReading;
 static int32_t Reading;
+static bool Enable;
 static bool NewReading;
 static int State;
+static bool WaitingForData;
 
 
-void rf_init(void)
-{
-    Continuous = 1;
-    Averages = 16;
-    AverageAccu = 0;
-    AverageAccuCount = 0;
-    RawReading = -200000;
-    Reading = -200000;
-    NewReading = 0;
-    State = 0;
-    
-    infra_set_led(0);
-}
-
-
-void rf_convert(void)
+void convert(void)
 {
     while( SPI1STATLbits.SPITBF == true )
     { /* wait */ }
@@ -37,13 +24,13 @@ void rf_convert(void)
 }
 
 
-bool rf_done(void)
+bool done(void)
 {
     return !(SPI1STATLbits.SPIRBE);
 }
 
 
-int rf_get_raw_result(void)
+int get_raw_result(void)
 {
     uint16_t raw = SPI1BUFL;
     
@@ -54,7 +41,7 @@ int rf_get_raw_result(void)
 }
 
 
-long rf_convert_to_mdb(long raw, int extra_rsh)
+long convert_to_mdb(long raw, int extra_rsh)
 {
     const uint32_t AdcMax = 0xFFFL;
     const float Reference = 3.0;
@@ -70,25 +57,41 @@ long rf_convert_to_mdb(long raw, int extra_rsh)
 }
 
 
-long rf_get_mdb(void)
+long get_mdb(void)
 {
-    return rf_convert_to_mdb(rf_get_raw_result(), 0);
+    return convert_to_mdb(get_raw_result(), 0);
 }
 
 
-void rf_fsm_loop(void)
+void rf_init(void)
+{
+    Continuous = 1;
+    Averages = 16;
+    AverageAccu = 0;
+    AverageAccuCount = 0; // start
+    RawReading = -200000;
+    Reading = -200000;
+    NewReading = 0;
+    Enable = 1;
+    State = 0;
+    
+    infra_set_led(0);
+}
+
+
+void rf_loop(void)
 {
     switch (State) {
         case 0:
-            rf_convert();
+            convert();
             State = 1;
             break;
         case 1:
-            if (rf_done())
+            if (done())
             {
-                long raw = rf_get_raw_result();
+                long raw = get_raw_result();
                 
-                RawReading = rf_convert_to_mdb(raw, 0);
+                RawReading = convert_to_mdb(raw, 0);
                 
                 if (RawReading < -50000)
                     infra_set_led(IS_LED_R|IS_LED_G|IS_LED_B);
@@ -97,17 +100,12 @@ void rf_fsm_loop(void)
                 else
                     infra_set_led(IS_LED_G);
                 
-                if (AverageAccuCount < Averages) {
-                    
-                    AverageAccu += raw;
-                    AverageAccuCount++;
-                    
-                    if (AverageAccuCount == Averages)
-                        State = 2;
-                    else
-                        State = 0;
-                    
-                } else
+                AverageAccu += raw;
+                
+                AverageAccuCount++;
+                if (AverageAccuCount == Averages)
+                    State = 2;
+                else
                     State = 0;
             }
             break;
@@ -126,57 +124,75 @@ void rf_fsm_loop(void)
                 rsh++;
             }
             
-            Reading = rf_convert_to_mdb(AverageAccu, rsh);
+            if (Enable && WaitingForData) {
+                Reading = convert_to_mdb(AverageAccu, rsh);
+                NewReading = 1;
+                WaitingForData = Continuous;
+            } else
+                WaitingForData = 0;
             
-            NewReading = 1;
             AverageAccu = 0;
-            
-            if (Continuous) {
-                AverageAccuCount = 0; // re-start
-                State = 0;
-            }
-            else
-                State = 3;
+            AverageAccuCount = 0;
+            State = 0;
             
             break;
         
-        case 3:
         default:
-            // stall
-            State = 3;
+            State = 0;
             break;
     }
 }
 
 
-void rf_fsm_trigger(void)
+void rf_trigger(void)
 {
     NewReading = 0;
     Continuous = 0;
     AverageAccu = 0;
-    AverageAccuCount = 0;
-    State = 0; // re-start
+    AverageAccuCount = 0; // re-start
+    Enable = 1;
+    WaitingForData = 1;
 }
 
 
-void rf_fsm_run(void)
+void rf_run(void)
 {
     NewReading = 0;
     Continuous = 1;
     AverageAccu = 0;
-    AverageAccuCount = 0;
-    State = 0; // re-start
+    AverageAccuCount = 0; // re-start
+    Enable = 1;
+    WaitingForData = 1;
 }
 
 
-void rf_fsm_stop(void)
+void rf_stop(void)
 {
     NewReading = 0;
-    State = 3; // stall
+    Enable = 0;
+    WaitingForData = 0;
 }
 
 
-void rf_fsm_set_avg(int n)
+bool rf_waiting(void)
+{
+    return WaitingForData;
+}
+
+
+bool rf_continuous(void)
+{
+    return Continuous;
+}
+
+
+int rf_get_avg(void)
+{
+    return Averages;
+}
+
+
+void rf_set_avg(int n)
 {
     if (n < 1)
         return;
@@ -184,21 +200,19 @@ void rf_fsm_set_avg(int n)
     Averages = n;
     AverageAccu = 0;
     AverageAccuCount = 0; // re-start
+    WaitingForData = 1;
 }
 
 
-bool rf_fsm_get_mdb(long *reading)
+bool rf_get_mdb(long *reading)
 {
     if (!NewReading)
         return 0;
+    NewReading = 0;
+    
+    if (!Enable)
+        return 0;
 
     *reading = Reading;
-    NewReading = 0;
     return 1;
-}
-
-
-long rf_fsm_get_mdb_async(void)
-{
-    return RawReading;
 }

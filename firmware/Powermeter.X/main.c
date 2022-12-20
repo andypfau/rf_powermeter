@@ -8,6 +8,7 @@
 #include "ui.h"
 #include "usb.h"
 #include "cal.h"
+#include "render.h"
 
 #include <stdbool.h>
 
@@ -22,6 +23,7 @@ int main(void)
     rf_init();
     mem_init();
     cal_init();
+    render_init();
     
     infra_enable_supply(1);
     infra_enable_rf(1);
@@ -31,7 +33,7 @@ int main(void)
     
     while (1)
     {
-        rf_fsm_loop();
+        rf_loop();
         ui_loop();
         usb_loop();
     }

@@ -7,6 +7,7 @@
 
 void cal_init(void);
 void cal_load(int16_t f_mhz);
+int cal_get_mhz();
 int32_t cal_apply(int32_t reading_mdb);
 
 
