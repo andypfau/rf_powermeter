@@ -1,4 +1,5 @@
 import serial
+import logging
 from dataclasses import dataclass
 
 
@@ -43,8 +44,8 @@ class Powermeter:
         self.ser.write([0]) # start communication
 
 
-    def _send(self, cmd: str):
-        self.ser.write(cmd.encode('ASCII'))
+    def _send(self, buf: str):
+        self.ser.write(buf.encode('ASCII'))
 
     
     def _receive(self) -> str:
@@ -68,6 +69,18 @@ class Powermeter:
 
         except Exception as ex:
             raise RuntimeError(f'Unable to query error code ({ex})')
+
+
+    def _command(self, cmd: str):
+        self._send(cmd)
+        self._check_for_errors()
+
+
+    def _query(self, qry: str) -> str:
+        self._send(qry)
+        result = self._receive()
+        self._check_for_errors()
+        return result
     
 
     def reset(self):
@@ -79,21 +92,18 @@ class Powermeter:
     def set_averaging(self, n: int):
         if n<1 or n>512 or not is_power_of_2(n):
             raise ValueError(f'Averaging must be a power of 2 in the range 1..512')
-        self._send(f'a{n}\n')
-        self._check_for_errors()
+        self._command(f'a{n}\n')
 
     
     def set_frequency(self, hz: float):
         mhz = int(round(hz/1e6))
         if mhz<10 or mhz>6000:
             raise ValueError(f'Frequency must be 10..6000 MHz')
-        self._send(f'f{mhz}\n')
-        self._check_for_errors()
+        self._command(f'f{mhz}\n')
 
     
     def enable_cal(self, enable: bool = True):
-        self._send(f'm{"1" if enable else "0"}\n')
-        self._check_for_errors()
+        self._command(f'l{"1" if enable else "0"}\n')
 
     
     def measure(self) -> float:
@@ -102,14 +112,12 @@ class Powermeter:
             return -99
         
         try:
-            self._send('t')
-            buf = self._receive()
+            buf = self._query('t')
             db = float(buf)
 
         except Exception as ex:
             raise RuntimeError(f'Unable to query reading ({ex})')
         
-        self._check_for_errors()
         return db
 
     
@@ -122,26 +130,52 @@ class Powermeter:
         
         else:
             try:
-                self._send('d')
-                buf = self._receive()
+                buf = self._query('d')
                 values = [float(part) for part in buf.split(';')]
                 [v_usb, v_a, temp] = values
 
             except Exception as ex:
                 raise RuntimeError(f'Unable to query diag ({ex})')
-        
-        self._check_for_errors()
             
         return Powermeter.Diag(v_usb, v_a, temp)
 
     
     def _write_to_eeprom(self, address: int, data_16b: int):
         assert (address & 0xFFFF) == address, '<address> must be a 16 bit value'
+        assert address % 2 == 0, '<address> not aligned to 16 bit word address'
         assert (data_16b & 0xFFFF) == data_16b, '<data_16b> must be a 16 bit value'
-        #self._send(f'w{address:04X}{data_16b:04X}\n')
-        print(f'>>> [0x{address:04X}] <- 0x{data_16b:04X}')
-        self._check_for_errors()
+        logging.debug(f'EEPROM write [0x{address:04X}] <- 0x{data_16b:04X}')
+        self._command(f'mw{address:04X}{data_16b:04X}\n')
 
+    
+    def read_from_eeprom(self, address: int) -> int:
+        assert (address & 0xFFFF) == address, '<address> must be a 16 bit value'
+        response = self._query(f'mr{address:04X}\n')
+        data_16b = int(response, 16)
+        logging.debug(f'EEPROM read [0x{address:04X}] -> 0x{data_16b:04X}')
+        return data_16b
+    
+
+    def _write_and_verify_eeprom(self, buffer: "dict[int,int]"):
+        
+        buffer_size = len(buffer)
+        
+        for buffer_index,(address,data_written) in enumerate(buffer.items()):
+            self._write_to_eeprom(address,data_written)
+            if buffer_index % 1000 == 0:
+                logging.debug(f'Writing to EEPROM, {buffer_index+1:,.0f}/{buffer_size:,.0f}')
+        
+        logging.debug(f'Writing to EEPROM done, verifying...')
+        
+        for buffer_index,(address,data_written) in enumerate(buffer.items()):
+            data_read = self.read_from_eeprom(address)
+            if data_read!=data_written:
+                raise RuntimeError(f'EEPROM verification failed: data at address 0x{address:04X} is 0x{data_read:04X}, but should be 0x{data_written:04X}')
+            if buffer_index % 1000 == 0:
+                logging.debug(f'Verifying EEPROM, {buffer_index+1:,.0f}/{buffer_size:,.0f}')
+
+        logging.debug(f'EEPROM verification done.')
+    
     
     def _prepare_cal_data(self, frequencies_hz: "list[float]", errors_db: "list[float]") -> "tuple[int,int,list[int],list[int],list[int]]":
         
@@ -177,18 +211,21 @@ class Powermeter:
     def write_cal_cata(self, frequencies_hz: "list[float]", errors_db: "list[float]"):
 
         var_shift, slope_shit, freqs, slopes, offsets = self._prepare_cal_data(frequencies_hz, errors_db)
-        n = len(freqs)
+        buffer_size = len(freqs)
 
-        assert 0 < n <= MEM_MAX_ENTRIES
+        assert 0 < buffer_size <= MEM_MAX_ENTRIES
 
-        self._write_to_eeprom(MEM_ADDR_CAL_DATA_COUNT, n)
-        self._write_to_eeprom(MEM_ADDR_CAL_VAR_SHIFT, var_shift)
-        self._write_to_eeprom(MEM_ADDR_CAL_SLOPE_SHIFT, slope_shit)
-        for i,freq in enumerate(freqs):
-            self._write_to_eeprom(MEM_ADDR_CAL_FREQ_DATA_START + i*2, freq)
-        for i,slope in enumerate(slopes):
-            self._write_to_eeprom(MEM_ADDR_CAL_SLOPE_DATA_START + i*4 + 0, (slope>>16)&0xFFFF)
-            self._write_to_eeprom(MEM_ADDR_CAL_SLOPE_DATA_START + i*4 + 2, (slope>> 0)&0xFFFF)
-        for i,offset in enumerate(offsets):
-            self._write_to_eeprom(MEM_ADDR_CAL_OFFSET_DATA_START + i*4 + 0, (offset>>16)&0xFFFF)
-            self._write_to_eeprom(MEM_ADDR_CAL_OFFSET_DATA_START + i*4 + 2, (offset>> 0)&0xFFFF)
+        buffer = {}
+        buffer[MEM_ADDR_CAL_DATA_COUNT] = buffer_size
+        buffer[MEM_ADDR_CAL_VAR_SHIFT] = var_shift
+        buffer[MEM_ADDR_CAL_SLOPE_SHIFT] = slope_shit
+        for buffer_index,freq in enumerate(freqs):
+            buffer[MEM_ADDR_CAL_FREQ_DATA_START + buffer_index*2] = freq
+        for buffer_index,slope in enumerate(slopes):
+            buffer[MEM_ADDR_CAL_SLOPE_DATA_START + buffer_index*4 + 0] = (slope>>16)&0xFFFF
+            buffer[MEM_ADDR_CAL_SLOPE_DATA_START + buffer_index*4 + 2] = (slope>> 0)&0xFFFF
+        for buffer_index,offset in enumerate(offsets):
+            buffer[MEM_ADDR_CAL_OFFSET_DATA_START + buffer_index*4 + 0] = (offset>>16)&0xFFFF
+            buffer[MEM_ADDR_CAL_OFFSET_DATA_START + buffer_index*4 + 2] = (offset>> 0)&0xFFFF
+
+        self._write_and_verify_eeprom(buffer)

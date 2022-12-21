@@ -37,6 +37,19 @@ int int_to_str(long value, char* buffer_11b)
 }
 
 
+int int_to_hex(unsigned long value, char n_digits, char* buffer_8b)
+{
+    for (int i = 0; i < n_digits; i++) {
+        char digit = (value >> (4*(n_digits-i-1))) & 0xF;
+        if (digit <= 9)
+            buffer_8b[i] = '0' + digit;
+        else
+            buffer_8b[i] = 'A' + (digit - 10);
+    }
+    return n_digits;
+}
+
+
 int fixed_to_str(long value, int exponent, char* buffer_12b)
 {
     int32_t part, remaining, divider, charCount, currentExponent;

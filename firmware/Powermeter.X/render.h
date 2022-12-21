@@ -18,6 +18,7 @@ void render_help(bool remote);
 void render_input(bool remote, enum EInput inputMode, char *buffer, int bufferPos);
 void render_error(bool remote, int error);
 void render_diag(bool remote, uint32_t vUsb, uint32_t vAnalog, uint32_t temp);
+void render_memory(bool remote, int16_t buffer);
 
 
 #endif	/* RENDER_H */

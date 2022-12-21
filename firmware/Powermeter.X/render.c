@@ -200,3 +200,17 @@ void render_diag(bool remote, uint32_t vUsb, uint32_t vAnalog, uint32_t temp)
     
     usb_set_data(StrBuffer, len);
 }
+
+
+void render_memory(bool remote, int16_t buffer)
+{
+    if (!remote)
+        return;
+    
+    int len = 0;
+    
+    len += int_to_hex(buffer, 4, &(StrBuffer[len]));
+    StrBuffer[len++] = '\n';
+    
+    usb_set_data(StrBuffer, len);
+}

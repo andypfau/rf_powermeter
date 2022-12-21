@@ -10,6 +10,7 @@
 
 
 int int_to_str(long value, char* buffer_11b);
+int int_to_hex(unsigned long value, char n_digits, char* buffer_8b);
 int fixed_to_str(long value, int exponent, char* buffer_12b);
 
 bool parse_int(char* buffer, int len, int *result);

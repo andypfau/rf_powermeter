@@ -26,6 +26,7 @@
 
 static char InBuffer[IN_BUF_SIZE];
 static int InBufferPos;
+static uint16_t MemBuffer;
 
 static int LastTickCount;
 
@@ -37,7 +38,12 @@ static int DiagVUsb, DiagVA;
 static long DiagTemp;
 static uint8_t Error;
 
-static enum { Idle, Redraw, Redraw2, DispReading, DispStatus, InputAvg, InputFreq, InputMem, InputCal, DispHelp, DispDiag, DispError } State;
+static enum {
+    Idle,
+    Redraw, Redraw2,
+    DispReading, DispStatus, DispHelp, DispDiag, DispError, DispMem,
+    InputAvg, InputFreq, InputMem, InputCal
+} State;
 static char DiagFsmState;
 
 
@@ -205,6 +211,11 @@ void ui_loop(void)
             Error = 0;
             State = Idle;
             break;
+            
+        case DispMem:
+            render_memory(Remote, MemBuffer);
+            State = Idle;
+            break;
     }
     
     char usbCmd = 0;
@@ -220,7 +231,7 @@ void ui_loop(void)
                     State = Redraw;
                     break;
                 case 'a':
-                    rf_stop();
+                    rf_suspend();
                     InBufferPos = 0;
                     State = InputAvg;
                     break;
@@ -231,7 +242,7 @@ void ui_loop(void)
                     }
                     break;
                 case 'd':
-                    rf_stop();
+                    rf_suspend();
                     State = DispDiag;
                     DiagFsmState = 0;
                     break;
@@ -246,20 +257,15 @@ void ui_loop(void)
                     State = DispStatus;
                     break;
                 case 'f':
-                    rf_stop();
+                    rf_suspend();
                     InBufferPos = 0;
                     State = InputFreq;
                     break;
                 case 'h':
                     if (!Remote) {
-                        rf_stop();
+                        rf_suspend();
                         State = DispHelp;
                     }
-                    break;
-                case 'm':
-                    rf_stop();
-                    InBufferPos = 0;
-                    State = InputCal;
                     break;
                 case 0:
                 case 'r': // for debugging only
@@ -268,12 +274,17 @@ void ui_loop(void)
                     Error = 0;
                     State = Idle;
                     break;
-                case 'w':
+                case 'm':
                     if (Remote) {
                         rf_stop();
                         InBufferPos = 0;
                         State = InputMem;
                     }
+                    break;
+                case 'l':
+                    rf_stop();
+                    InBufferPos = 0;
+                    State = InputCal;
                     break;
                 default:
                     // ignore
@@ -314,17 +325,33 @@ void ui_loop(void)
                     } else
                         Error = ERROR_INVALID_INPUT;
                 } else if (State == InputMem) {
-                    if (InBufferPos == 8) {
+                    if (InBufferPos >= 1) {
                         uint32_t tmp;
-                        if (parse_hex(InBuffer, InBufferPos, &tmp)) {
-                            uint16_t address = (tmp >> 16) & 0xFFFF;
-                            uint16_t buffer = tmp & 0xFFFF;
-                            if (infra_acquire_i2c()) {
-                                mem_write(address, 2, (uint8_t*)(&buffer));
-                                mem_wait();
-                                infra_release_i2c();
+                        if ((InBuffer[0] == 'w') && (InBufferPos == 9)) {
+                            if (parse_hex((char*)(&InBuffer[1]), 8, &tmp)) {
+                                uint16_t address = (tmp >> 16) & 0xFFFF;
+                                MemBuffer = tmp & 0xFFFF;
+                                if (infra_acquire_i2c()) {
+                                    mem_write(address, 2, (uint8_t*)(&MemBuffer));
+                                    mem_wait();
+                                    MemBuffer = 0xF00F; // invalidate as a sanity check
+                                    infra_release_i2c();
+                                } else
+                                    Error = ERROR_I2C_BUSY;
                             } else
-                                Error = ERROR_I2C_BUSY;
+                                Error = ERROR_INVALID_INPUT;
+                        } else if ((InBuffer[0] == 'r') && (InBufferPos == 5)) {
+                            if (parse_hex((char*)(&InBuffer[1]), 4, &tmp)) {
+                                if (infra_acquire_i2c()) {
+                                    mem_read(tmp, 2, (uint8_t*)(&MemBuffer));
+                                    mem_wait();
+                                    infra_release_i2c();
+                                    State = DispMem;
+                                    break;
+                                } else
+                                    Error = ERROR_I2C_BUSY;
+                            } else
+                                Error = ERROR_INVALID_INPUT;
                         } else
                             Error = ERROR_INVALID_INPUT;
                     }

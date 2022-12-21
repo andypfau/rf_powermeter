@@ -168,6 +168,15 @@ void rf_run(void)
 
 void rf_stop(void)
 {
+    Continuous = 0;
+    NewReading = 0;
+    Enable = 0;
+    WaitingForData = 0;
+}
+
+
+void rf_suspend(void)
+{
     NewReading = 0;
     Enable = 0;
     WaitingForData = 0;
