@@ -21,11 +21,11 @@
 
 
 static uint16_t NumberOfEntries;
-static uint32_t Slope, Offset;
-static int MHz;
+static int32_t Slope, Offset;
+static uint16_t MHz;
 
 
-int32_t interpolate(int16_t x, int32_t slope, int32_t offset, int varShift, int facShift)
+int32_t interpolate(uint16_t x, int32_t slope, int32_t offset, int varShift, int facShift)
 {
     int32_t xw = ((int32_t)x) << varShift;
     int32_t yw = offset + slope * xw;
@@ -44,7 +44,7 @@ void cal_init(void)
 }
 
 
-void cal_load(int16_t f_mhz)
+void cal_load(uint16_t f_mhz)
 {
     // find closest address
     int best_idx = 0;

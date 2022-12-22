@@ -38,6 +38,7 @@
       <itemPath>ui.h</itemPath>
       <itemPath>usb.h</itemPath>
       <itemPath>cal.h</itemPath>
+      <itemPath>render.h</itemPath>
     </logicalFolder>
     <logicalFolder name="LinkerScript"
                    displayName="Linker Files"
@@ -77,6 +78,7 @@
       <itemPath>ui.c</itemPath>
       <itemPath>usb.c</itemPath>
       <itemPath>cal.c</itemPath>
+      <itemPath>render.c</itemPath>
     </logicalFolder>
     <logicalFolder name="ExternalFiles"
                    displayName="Important Files"

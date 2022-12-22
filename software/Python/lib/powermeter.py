@@ -1,6 +1,8 @@
 import serial
 import logging
 from dataclasses import dataclass
+import time
+import json
 
 
 MEM_MAX_ENTRIES = 1638
@@ -14,6 +16,19 @@ MEM_ADDR_CAL_OFFSET_DATA_START = 0xC000
 
 CAL_VARIABLE_SHIFT = 1
 CAL_SLOPE_SHIFT    = 8
+
+ERROR_CODES = {
+    11: 'Invalid input',
+    21: 'Temperature sensor read failed',
+    22: 'I2C busy',
+    23: 'Mem write rejected',
+    24: 'Mem write failed',
+    25: 'Mem read rejected',
+    26: 'Mem read failed',
+}
+
+
+TWR_S = 5e-3
 
 
 def is_power_of_2(i: int) -> bool:
@@ -32,15 +47,15 @@ class Powermeter:
             return f'5V0USB = {self.UsbV:+.3f} V, 5V0A: {self.Analog5V:+.3f} V, Temperature: {self.TempC:+.2f} °C'
 
 
-    def __init__(self, port: str, offline: bool = False):
+    def __init__(self, port: str, offline: bool = False, timeout_s: float = 3.0):
         self.offline = offline
-        self._connect(port)
+        self._connect(port, timeout_s)
     
 
-    def _connect(self, port: str):
+    def _connect(self, port: str, timeout_s: float):
         if self.offline:
             return
-        self.ser = serial.Serial(port=port, timeout=3.0)
+        self.ser = serial.Serial(port=port, timeout=timeout_s)
         self.ser.write([0]) # start communication
 
 
@@ -49,6 +64,8 @@ class Powermeter:
 
     
     def _receive(self) -> str:
+        if self.offline:
+            return ''
         buf = self.ser.read_until(b'\n')
         if len(buf) == 0:
             raise RuntimeError('No response after timeout')
@@ -65,7 +82,11 @@ class Powermeter:
             buf = self._receive()
             error = int(buf)
             if error != 0:
-                raise RuntimeError(f'Device reported error code {error}')
+                if error in ERROR_CODES:
+                    message = ERROR_CODES[error]
+                    raise RuntimeError(f'Device reported error "{message}" (code {error})')
+                else:
+                    raise RuntimeError(f'Device reported error code {error}')
 
         except Exception as ex:
             raise RuntimeError(f'Unable to query error code ({ex})')
@@ -140,12 +161,15 @@ class Powermeter:
         return Powermeter.Diag(v_usb, v_a, temp)
 
     
-    def _write_to_eeprom(self, address: int, data_16b: int):
+    def write_to_eeprom(self, address: int, data_16b: int):
+        if self.read_from_eeprom(address) == data_16b:
+            logging.debug(f'Skipping EEPROM write [0x{address:04X}] <- 0x{data_16b:04X} (data already matches)')
+            return
         assert (address & 0xFFFF) == address, '<address> must be a 16 bit value'
-        assert address % 2 == 0, '<address> not aligned to 16 bit word address'
         assert (data_16b & 0xFFFF) == data_16b, '<data_16b> must be a 16 bit value'
         logging.debug(f'EEPROM write [0x{address:04X}] <- 0x{data_16b:04X}')
         self._command(f'mw{address:04X}{data_16b:04X}\n')
+        time.sleep(TWR_S * 2.5) # ensure proper write cycle time
 
     
     def read_from_eeprom(self, address: int) -> int:
@@ -156,21 +180,24 @@ class Powermeter:
         return data_16b
     
 
-    def _write_and_verify_eeprom(self, buffer: "dict[int,int]"):
+    def write_and_verify_eeprom(self, buffer: "dict[int,int]"):
         
         buffer_size = len(buffer)
         
-        for buffer_index,(address,data_written) in enumerate(buffer.items()):
-            self._write_to_eeprom(address,data_written)
+        for buffer_index, (address, data) in enumerate(buffer.items()):
+            self.write_to_eeprom(address, data)
+            data_read = self.read_from_eeprom(address)
+            if data_read != data:
+                raise RuntimeError(f'EEPROM verify [0x{address:04X}] -> 0x{data_read:04X} -> ERROR, should be 0x{data:04X}')
             if buffer_index % 1000 == 0:
                 logging.debug(f'Writing to EEPROM, {buffer_index+1:,.0f}/{buffer_size:,.0f}')
         
         logging.debug(f'Writing to EEPROM done, verifying...')
         
-        for buffer_index,(address,data_written) in enumerate(buffer.items()):
+        for buffer_index, (address, data_written) in enumerate(buffer.items()):
             data_read = self.read_from_eeprom(address)
-            if data_read!=data_written:
-                raise RuntimeError(f'EEPROM verification failed: data at address 0x{address:04X} is 0x{data_read:04X}, but should be 0x{data_written:04X}')
+            if data_read != data_written:
+                raise RuntimeError(f'EEPROM verify [0x{address:04X}] -> 0x{data_read:04X} -> ERROR, should be 0x{data_written:04X}')
             if buffer_index % 1000 == 0:
                 logging.debug(f'Verifying EEPROM, {buffer_index+1:,.0f}/{buffer_size:,.0f}')
 
@@ -199,26 +226,44 @@ class Powermeter:
             exp_slope = 2**CAL_SLOPE_SHIFT
             
             slope = d_err_mdb / d_f_mhz * exp_slope
-            offset = (exp_slope * err_mdb - round(slope) * f_mhz) * exp_var
+            offset = (exp_slope * err_mdb - round(slope) * round(f_mhz)) * exp_var
 
-            freqs.append(int(round(f_mhz)))
-            slopes.append(int(round(slope)))
-            offsets.append(int(round(offset)))
+            freq_int = int(round(f_mhz))
+            slope_int = int(round(slope))
+            offset_int = int(round(offset))
+
+            if not (0 <= freq_int <= 0xFFFF):
+                raise ValueError(f'Frequency {frequencies_hz[i]} does not fit into unsigned 16 bit')
+            if not (-0x7FFFFFFF <= slope_int <= +0x7FFFFFFE):
+                raise ValueError(f'Slope for error-value {errors_db[i]} does not fit into signed 32 bit')
+            if not (-0x7FFFFFFF <= offset_int <= +0x7FFFFFFE):
+                raise ValueError(f'Offset for error-value {errors_db[i]} does not fit into signed 32 bit')
+
+            freqs.append(freq_int)
+            slopes.append(slope_int)
+            offsets.append(offset_int)
         
         return CAL_VARIABLE_SHIFT, CAL_SLOPE_SHIFT, freqs, slopes, offsets
 
 
-    def write_cal_cata(self, frequencies_hz: "list[float]", errors_db: "list[float]"):
+    def write_cal_cata(self, frequencies_hz: "list[float]", errors_db: "list[float]", dump_to_file: str = None):
 
-        var_shift, slope_shit, freqs, slopes, offsets = self._prepare_cal_data(frequencies_hz, errors_db)
+        var_shift, slope_shift, freqs, slopes, offsets = self._prepare_cal_data(frequencies_hz, errors_db)
+        
         buffer_size = len(freqs)
-
         assert 0 < buffer_size <= MEM_MAX_ENTRIES
+
+        if dump_to_file is not None:
+            with open(dump_to_file, 'w') as fp:
+                obj = dict(var_shift=var_shift, slope_shift=slope_shift, freqs=freqs, slopes=slopes, offsets=offsets)
+                obj_json = json.dumps(obj, indent='\t')
+                fp.write(obj_json)
+            return
 
         buffer = {}
         buffer[MEM_ADDR_CAL_DATA_COUNT] = buffer_size
         buffer[MEM_ADDR_CAL_VAR_SHIFT] = var_shift
-        buffer[MEM_ADDR_CAL_SLOPE_SHIFT] = slope_shit
+        buffer[MEM_ADDR_CAL_SLOPE_SHIFT] = slope_shift
         for buffer_index,freq in enumerate(freqs):
             buffer[MEM_ADDR_CAL_FREQ_DATA_START + buffer_index*2] = freq
         for buffer_index,slope in enumerate(slopes):
@@ -228,4 +273,4 @@ class Powermeter:
             buffer[MEM_ADDR_CAL_OFFSET_DATA_START + buffer_index*4 + 0] = (offset>>16)&0xFFFF
             buffer[MEM_ADDR_CAL_OFFSET_DATA_START + buffer_index*4 + 2] = (offset>> 0)&0xFFFF
 
-        self._write_and_verify_eeprom(buffer)
+        self.write_and_verify_eeprom(buffer)

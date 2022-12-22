@@ -37,10 +37,10 @@ int int_to_str(long value, char* buffer_11b)
 }
 
 
-int int_to_hex(unsigned long value, char n_digits, char* buffer_8b)
+int int_to_hex(uint32_t value, char n_digits, char* buffer_8b)
 {
     for (int i = 0; i < n_digits; i++) {
-        char digit = (value >> (4*(n_digits-i-1))) & 0xF;
+        uint8_t digit = (value >> (4*(n_digits-i-1))) & 0xF;
         if (digit <= 9)
             buffer_8b[i] = '0' + digit;
         else
@@ -119,9 +119,9 @@ bool parse_hex(char* buffer, int len, uint32_t *result)
         if ((buffer[i] >= '0') && (buffer[i] <= '9'))
             value = buffer[i] - '0';
         else if ((buffer[i] >= 'a') && (buffer[i] <= 'f'))
-            value = buffer[i] + 0xA - 'a';
+            value = buffer[i] - 'a' + 0xA;
         else if ((buffer[i] >= 'A') && (buffer[i] <= 'F'))
-            value = buffer[i] + 0xA - 'A';
+            value = buffer[i] - 'A' + 0xA;
         else
             return 0;
         *result <<= 4;

@@ -19,9 +19,13 @@
 #define IN_BUF_SIZE  10
 
 
-#define ERROR_INVALID_INPUT    11
-#define ERROR_TEMP_READ_FAILED 21
-#define ERROR_I2C_BUSY         22
+#define ERROR_INVALID_INPUT      11
+#define ERROR_TEMP_READ_FAILED   21
+#define ERROR_I2C_BUSY           22
+#define ERROR_MEM_WRITE_REJECTED 23
+#define ERROR_MEM_WRITE_FAILED   24
+#define ERROR_MEM_READ_REJECTED  25
+#define ERROR_MEM_READ_FAILED    26
 
 
 static char InBuffer[IN_BUF_SIZE];
@@ -332,19 +336,29 @@ void ui_loop(void)
                                 uint16_t address = (tmp >> 16) & 0xFFFF;
                                 MemBuffer = tmp & 0xFFFF;
                                 if (infra_acquire_i2c()) {
-                                    mem_write(address, 2, (uint8_t*)(&MemBuffer));
-                                    mem_wait();
-                                    MemBuffer = 0xF00F; // invalidate as a sanity check
+                                    if (mem_write(address, 2, (uint8_t*)(&MemBuffer))) {
+                                        int status = mem_wait();
+                                        if (status < 0)
+                                            Error = ERROR_MEM_WRITE_FAILED;
+                                    }
+                                    else
+                                        Error = ERROR_MEM_WRITE_REJECTED;
                                     infra_release_i2c();
                                 } else
                                     Error = ERROR_I2C_BUSY;
+                                MemBuffer = 0xDEAD; // invalidate as a sanity check
                             } else
                                 Error = ERROR_INVALID_INPUT;
                         } else if ((InBuffer[0] == 'r') && (InBufferPos == 5)) {
                             if (parse_hex((char*)(&InBuffer[1]), 4, &tmp)) {
+                                MemBuffer = 0xBEEF; // invalidate as a sanity check
                                 if (infra_acquire_i2c()) {
-                                    mem_read(tmp, 2, (uint8_t*)(&MemBuffer));
-                                    mem_wait();
+                                    if (mem_read(tmp, 2, (uint8_t*)(&MemBuffer))) {
+                                        int status = mem_wait();
+                                        if (status < 0)
+                                            Error = ERROR_MEM_READ_FAILED;
+                                    } else
+                                        Error = ERROR_MEM_READ_REJECTED;
                                     infra_release_i2c();
                                     State = DispMem;
                                     break;
