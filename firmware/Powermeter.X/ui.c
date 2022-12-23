@@ -59,7 +59,7 @@ void ui_init(void)
     infra_set_led(0);
     
     InBufferPos = 0;
-    ApplyCal = 0;
+    ApplyCal = 1;
     Reading = READING_INVALID;
     State = Idle;
     DiagFsmState = 0;
@@ -69,9 +69,6 @@ void ui_init(void)
     DiagTemp = 0;
     Remote = 1;
     Error = 0;
-    
-    rf_stop();
-    rf_set_avg(16);
     
     TMR1_Period16BitSet(2500); // 100 Hz
     TMR1_Start();
@@ -121,13 +118,15 @@ void ui_loop(void)
             break;
             
         case DispStatus:
-            if (LastUiLine != 1)
-            {
-                render_reading(Remote, Reading);
-                LastUiLine = 1;
-            } else {
-                render_status(Remote, rf_continuous(), rf_get_avg(), cal_get_mhz(), ApplyCal);
-                LastUiLine = 2;
+            if (!Remote) {
+                if (LastUiLine != 1)
+                {
+                    render_reading(Remote, Reading);
+                    LastUiLine = 1;
+                } else {
+                    render_status(Remote, rf_continuous(), rf_get_avg(), cal_get_mhz(), ApplyCal);
+                    LastUiLine = 2;
+                }
             }
             State = Idle;
             break;
@@ -405,7 +404,12 @@ void ui_loop(void)
             }
             break;
         
-        default:
+        case Redraw:
+        case Redraw2:
+        case DispReading:
+        case DispStatus:
+        case DispError:
+        case DispMem:
             break;
     }
         

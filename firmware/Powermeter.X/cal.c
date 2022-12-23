@@ -19,7 +19,7 @@ static uint16_t NumberOfEntries;
 static int VarShift, SlopeShift;
 static int32_t Slope, Offset;
 static uint16_t MHz;
-static int32_t Compensation;
+static int32_t ErrorToCompensate;
 
 
 uint16_t read_uint16(int address)
@@ -33,39 +33,43 @@ uint16_t read_uint16(int address)
 
 int32_t read_int32(int address)
 {
-    int32_t buffer;
+    uint32_t buffer;
     mem_read(address, 4, (uint8_t*)(&buffer));
     mem_wait();
-    int32_t fixed = (buffer << 16) | (buffer >> 16); // fix 16b-word endianness
-    return fixed;
-}
-
-
-void cal_init(void)
-{
-    NumberOfEntries = read_uint16(MEM_ADDR_CAL_DATA_COUNT);
-    VarShift        = read_uint16(MEM_ADDR_CAL_VAR_SHIFT);
-    SlopeShift      = read_uint16(MEM_ADDR_CAL_SLOPE_SHIFT);
-    
-    cal_load(10);
+    uint32_t fixed = (buffer << 16) | (buffer >> 16); // fix 16b-word endianness
+    return (int32_t)fixed;
 }
 
 
 void load_offset_and_slope(uint16_t f_mhz)
 {
-    int best_idx = 0;
-    int16_t best_err = 0x7FFF;
-    for (int i = 0; i < NumberOfEntries; i++) {
-        uint16_t f_mhz_mem = read_uint16(MEM_ADDR_CAL_FREQ_DATA_START + i*2);
-        int16_t err = abs(f_mhz - f_mhz_mem);
-        if (err < best_err) {
-            best_idx = i;
-            best_err = err;
-        }
-    }
+    long lowestIndex = 0;
+    long highestIndex = NumberOfEntries-1;
+    long currentIndex = (lowestIndex + highestIndex) >> 1;
     
-    Slope  = read_int32(MEM_ADDR_CAL_SLOPE_DATA_START  + best_idx*4);
-    Offset = read_int32(MEM_ADDR_CAL_OFFSET_DATA_START + best_idx*4);
+    // find the lowest index that is less than or equal to the sought frequency
+    // using binary search, because linear search is super slow
+    while (highestIndex > lowestIndex) {
+        
+        uint16_t f_mhz_mem = read_uint16(MEM_ADDR_CAL_FREQ_DATA_START + currentIndex*2);
+        
+        if (f_mhz_mem == f_mhz) {
+            // found it
+            break;
+        } else if (f_mhz_mem > f_mhz) {
+            // too high, go lower
+            highestIndex = currentIndex;
+        } else {
+            // too low, go higher
+            lowestIndex = currentIndex + 1;
+        }
+        currentIndex = (lowestIndex + highestIndex) >> 1;
+    }
+    if (currentIndex != 0)
+        currentIndex--; // we need the next *lower* index for proper interpolation
+    
+    Slope  = read_int32(MEM_ADDR_CAL_SLOPE_DATA_START  + currentIndex*4);
+    Offset = read_int32(MEM_ADDR_CAL_OFFSET_DATA_START + currentIndex*4);
 }
 
 
@@ -77,10 +81,20 @@ int32_t interpolate(uint16_t x, int32_t slope, int32_t offset, int varShift, int
 }
 
 
+void cal_init(void)
+{
+    NumberOfEntries = read_uint16(MEM_ADDR_CAL_DATA_COUNT);
+    VarShift        = read_uint16(MEM_ADDR_CAL_VAR_SHIFT);
+    SlopeShift      = read_uint16(MEM_ADDR_CAL_SLOPE_SHIFT);
+    
+    cal_load(898);
+}
+
+
 void cal_load(uint16_t f_mhz)
 {
     load_offset_and_slope(f_mhz);
-    Compensation = interpolate(f_mhz, Slope, Offset, VarShift, SlopeShift);
+    ErrorToCompensate = interpolate(f_mhz, Slope, Offset, VarShift, SlopeShift);
     MHz = f_mhz;
 }
 
@@ -93,5 +107,5 @@ int cal_get_mhz(void)
 
 int32_t cal_apply(int32_t reading_mdb)
 {
-    return reading_mdb + Compensation;
+    return reading_mdb - ErrorToCompensate;
 }

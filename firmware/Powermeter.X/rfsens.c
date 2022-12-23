@@ -65,14 +65,14 @@ long get_mdb(void)
 
 void rf_init(void)
 {
-    Continuous = 1;
+    Continuous = 0;
     Averages = 16;
     AverageAccu = 0;
     AverageAccuCount = 0; // start
-    RawReading = -200000;
-    Reading = -200000;
+    RawReading = 0;
+    Reading = 0;
     NewReading = 0;
-    Enable = 1;
+    Enable = 0;
     State = 0;
     
     infra_set_led(0);

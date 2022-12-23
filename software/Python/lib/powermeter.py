@@ -3,6 +3,7 @@ import logging
 from dataclasses import dataclass
 import time
 import json
+from types import SimpleNamespace
 
 
 MEM_MAX_ENTRIES = 1638
@@ -186,7 +187,7 @@ class Powermeter:
             if data_read != data:
                 raise RuntimeError(f'EEPROM verify [0x{address:04X}] -> 0x{data_read:04X} -> ERROR, should be 0x{data:04X}')
             if buffer_index % 1000 == 0:
-                logging.debug(f'Writing to EEPROM, {buffer_index+1:,.0f}/{buffer_size:,.0f}')
+                logging.info(f'Writing to EEPROM, {buffer_index+1:,.0f}/{buffer_size:,.0f}')
         
         logging.debug(f'Writing to EEPROM done, verifying...')
         
@@ -195,30 +196,47 @@ class Powermeter:
             if data_read != data_written:
                 raise RuntimeError(f'EEPROM verify [0x{address:04X}] -> 0x{data_read:04X} -> ERROR, should be 0x{data_written:04X}')
             if buffer_index % 1000 == 0:
-                logging.debug(f'Verifying EEPROM, {buffer_index+1:,.0f}/{buffer_size:,.0f}')
+                logging.info(f'Verifying EEPROM, {buffer_index+1:,.0f}/{buffer_size:,.0f}')
 
-        logging.debug(f'EEPROM verification done.')
+        logging.info(f'EEPROM verification done.')
     
     
     def _prepare_cal_data(self, frequencies_hz: "list[float]", errors_db: "list[float]") -> "tuple[int,int,list[int],list[int],list[int]]":
         
         if len(frequencies_hz) != len(errors_db):
             raise ValueError(f'Number of entries must be the same for both lists')
+        
+        data_points = []
+        previous_freq_hz = None
+        previous_freq_mhz = None
+        for f,e in zip(frequencies_hz, errors_db):
+            
+            frequency_mhz = int(round(f / 1e6))
+            error_mdb = int(round(e * 1e3))
+            
+            if previous_freq_hz is not None:
+                if f <= previous_freq_hz:
+                    raise ValueError(f'List of frequencies must be monotonic')
+            
+            if frequency_mhz == previous_freq_mhz:
+                # avoid duplicate entries
+                continue
+            
+            previous_freq_hz = f
+            previous_freq_mhz = frequency_mhz
+
+            data_points.append(SimpleNamespace(f_hz = f, f_mhz = frequency_mhz, e_db = e, e_mdb = error_mdb))
+        
         if not (2 <= len(frequencies_hz) <= MEM_MAX_ENTRIES-1):
-            raise ValueError(f'Number of entries must be 2..{MEM_MAX_ENTRIES}')
+            raise ValueError(f'Number of entries must be 2..{MEM_MAX_ENTRIES} (note that due to roudning of the MHz, some data points may be removed from the dataset)')
 
         freqs, slopes, offsets = [], [], []
-        for i in range(1, len(frequencies_hz)):
+        for i in range(len(data_points)-1):
 
-            if frequencies_hz[i-1] >= frequencies_hz[i]:
-                raise ValueError(f'Frequency list must be monotonic (check index {i})')
-
-            f_mhz = frequencies_hz[i]/1e6
-            err_mdb = 1e3 * errors_db[i]
-            d_err_mdb = 1e3 * (errors_db[i] - errors_db[i-1])
-            d_f_mhz = (frequencies_hz[i] - frequencies_hz[i-1]) / 1e6
-
-            # TODO: due to rounding, MHz values might not be unique, e.g. the frequencies in the final cal table might be [10, 10, 11, 11, 12, 13, ...]
+            f_mhz = data_points[i].f_mhz
+            err_mdb = data_points[i].e_mdb
+            d_err_mdb = 1e3 * (data_points[i+1].e_db - data_points[i].e_db)
+            d_f_mhz = (data_points[i+1].f_hz - data_points[i].f_hz) / 1e6
 
             exp_var = 2**CAL_VARIABLE_SHIFT
             exp_slope = 2**CAL_SLOPE_SHIFT
@@ -271,4 +289,4 @@ class Powermeter:
                 fp.write(obj_json)
             return
 
-        #self.write_and_verify_eeprom(buffer)
+        self.write_and_verify_eeprom(buffer)

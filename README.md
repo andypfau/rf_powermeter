@@ -17,8 +17,7 @@ A 10 MHz to 8 GHz RF power meter with USB connectivity.
 
 ## Project Status
 
-- Prototype is working
-- Firmware is working, but does not apply compensation data yet
+The hardware is working. The firmware is considered beta, but all functionality is implemented, and should work.
 
 
 ### Thoughts on Design
