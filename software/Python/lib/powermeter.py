@@ -28,7 +28,7 @@ ERROR_CODES = {
 }
 
 
-TWR_S = 5e-3
+EEPROM_TWR_S = 5e-3
 
 
 def is_power_of_2(i: int) -> bool:
@@ -111,15 +111,11 @@ class Powermeter:
 
     
     def set_averaging(self, n: int):
-        if n<1 or n>512 or not is_power_of_2(n):
-            raise ValueError(f'Averaging must be a power of 2 in the range 1..512')
         self._command(f'a{n}\n')
 
     
     def set_frequency(self, hz: float):
         mhz = int(round(hz/1e6))
-        if mhz<10 or mhz>6000:
-            raise ValueError(f'Frequency must be 10..6000 MHz')
         self._command(f'f{mhz}\n')
 
     
@@ -169,7 +165,7 @@ class Powermeter:
         assert (data_16b & 0xFFFF) == data_16b, '<data_16b> must be a 16 bit value'
         logging.debug(f'EEPROM write [0x{address:04X}] <- 0x{data_16b:04X}')
         self._command(f'mw{address:04X}{data_16b:04X}\n')
-        time.sleep(TWR_S * 2.5) # ensure proper write cycle time
+        time.sleep(EEPROM_TWR_S * 2.5) # ensure sufficient write cycle time
 
     
     def read_from_eeprom(self, address: int) -> int:
@@ -222,6 +218,8 @@ class Powermeter:
             d_err_mdb = 1e3 * (errors_db[i] - errors_db[i-1])
             d_f_mhz = (frequencies_hz[i] - frequencies_hz[i-1]) / 1e6
 
+            # TODO: due to rounding, MHz values might not be unique, e.g. the frequencies in the final cal table might be [10, 10, 11, 11, 12, 13, ...]
+
             exp_var = 2**CAL_VARIABLE_SHIFT
             exp_slope = 2**CAL_SLOPE_SHIFT
             
@@ -252,14 +250,6 @@ class Powermeter:
         
         buffer_size = len(freqs)
         assert 0 < buffer_size <= MEM_MAX_ENTRIES
-
-        if dump_to_file is not None:
-            with open(dump_to_file, 'w') as fp:
-                obj = dict(var_shift=var_shift, slope_shift=slope_shift, freqs=freqs, slopes=slopes, offsets=offsets)
-                obj_json = json.dumps(obj, indent='\t')
-                fp.write(obj_json)
-            return
-
         buffer = {}
         buffer[MEM_ADDR_CAL_DATA_COUNT] = buffer_size
         buffer[MEM_ADDR_CAL_VAR_SHIFT] = var_shift
@@ -272,5 +262,13 @@ class Powermeter:
         for buffer_index,offset in enumerate(offsets):
             buffer[MEM_ADDR_CAL_OFFSET_DATA_START + buffer_index*4 + 0] = (offset>>16)&0xFFFF
             buffer[MEM_ADDR_CAL_OFFSET_DATA_START + buffer_index*4 + 2] = (offset>> 0)&0xFFFF
+        
 
-        self.write_and_verify_eeprom(buffer)
+        if dump_to_file is not None:
+            with open(dump_to_file, 'w') as fp:
+                obj = dict(var_shift=var_shift, slope_shift=slope_shift, freqs=freqs, slopes=slopes, offsets=offsets, memory=buffer)
+                obj_json = json.dumps(obj, indent='\t')
+                fp.write(obj_json)
+            return
+
+        #self.write_and_verify_eeprom(buffer)
