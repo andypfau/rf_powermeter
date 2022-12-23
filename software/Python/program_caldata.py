@@ -11,9 +11,11 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('port', type=str)
     parser.add_argument('datafile', type=str)
+    parser.add_argument('--verify', action='store_true')
     args = parser.parse_args()
     port = args.port
     datafile = args.datafile
+    verify = args.verify
 
     try:
 
@@ -24,7 +26,7 @@ if __name__ == '__main__':
         err_db = error_data['PErr/dB'].to_numpy()
 
         pm = Powermeter(port)
-        pm.write_cal_cata(f_hz, err_db)
+        pm.write_cal_cata(f_hz, err_db, verify_only=verify)
     
     except Exception as ex:
         logging.exception(ex)

@@ -29,9 +29,6 @@ ERROR_CODES = {
 }
 
 
-EEPROM_TWR_S = 5e-3
-
-
 def is_power_of_2(i: int) -> bool:
     return (i & (i-1)) == 0
 
@@ -158,15 +155,15 @@ class Powermeter:
         return Powermeter.Diag(v_usb, v_a, temp)
 
     
-    def write_to_eeprom(self, address: int, data_16b: int):
+    def write_to_eeprom(self, address: int, data_16b: int) -> bool:
         if self.read_from_eeprom(address) == data_16b:
             logging.debug(f'Skipping EEPROM write [0x{address:04X}] <- 0x{data_16b:04X} (data already matches)')
-            return
+            return False
         assert (address & 0xFFFF) == address, '<address> must be a 16 bit value'
         assert (data_16b & 0xFFFF) == data_16b, '<data_16b> must be a 16 bit value'
         logging.debug(f'EEPROM write [0x{address:04X}] <- 0x{data_16b:04X}')
         self._command(f'mw{address:04X}{data_16b:04X}\n')
-        time.sleep(EEPROM_TWR_S * 2.5) # ensure sufficient write cycle time
+        return True
 
     
     def read_from_eeprom(self, address: int) -> int:
@@ -177,26 +174,28 @@ class Powermeter:
         return data_16b
     
 
-    def write_and_verify_eeprom(self, buffer: "dict[int,int]"):
+    def write_and_verify_eeprom(self, buffer: "dict[int,int]", verify_only: bool = False):
         
         buffer_size = len(buffer)
+
+        REPORT_INTERVAL = 100
         
-        for buffer_index, (address, data) in enumerate(buffer.items()):
-            self.write_to_eeprom(address, data)
-            data_read = self.read_from_eeprom(address)
-            if data_read != data:
-                raise RuntimeError(f'EEPROM verify [0x{address:04X}] -> 0x{data_read:04X} -> ERROR, should be 0x{data:04X}')
-            if buffer_index % 1000 == 0:
-                logging.info(f'Writing to EEPROM, {buffer_index+1:,.0f}/{buffer_size:,.0f}')
-        
-        logging.debug(f'Writing to EEPROM done, verifying...')
+        if not verify_only:
+            n_actually_written = 0
+            for buffer_index, (address, data) in enumerate(buffer.items()):
+                if self.write_to_eeprom(address, data):
+                    n_actually_written += 1
+                if buffer_index % REPORT_INTERVAL == REPORT_INTERVAL - 1:
+                    logging.info(f'Writing to EEPROM, {buffer_index+1} of {buffer_size}')
+            
+            logging.info(f'Writing to EEPROM done ({n_actually_written} of {buffer_size} addresses had to be written), verifying...')
         
         for buffer_index, (address, data_written) in enumerate(buffer.items()):
             data_read = self.read_from_eeprom(address)
             if data_read != data_written:
                 raise RuntimeError(f'EEPROM verify [0x{address:04X}] -> 0x{data_read:04X} -> ERROR, should be 0x{data_written:04X}')
-            if buffer_index % 1000 == 0:
-                logging.info(f'Verifying EEPROM, {buffer_index+1:,.0f}/{buffer_size:,.0f}')
+            if buffer_index % REPORT_INTERVAL == REPORT_INTERVAL - 1:
+                logging.info(f'Verifying EEPROM, {buffer_index+1} of {buffer_size}')
 
         logging.info(f'EEPROM verification done.')
     
@@ -260,9 +259,9 @@ class Powermeter:
             offsets.append(offset_int)
         
         return CAL_VARIABLE_SHIFT, CAL_SLOPE_SHIFT, freqs, slopes, offsets
+    
 
-
-    def write_cal_cata(self, frequencies_hz: "list[float]", errors_db: "list[float]", dump_to_file: str = None):
+    def write_cal_cata(self, frequencies_hz: "list[float]", errors_db: "list[float]", dump_to_file: str = None, verify_only: bool = False):
 
         var_shift, slope_shift, freqs, slopes, offsets = self._prepare_cal_data(frequencies_hz, errors_db)
         
@@ -289,4 +288,4 @@ class Powermeter:
                 fp.write(obj_json)
             return
 
-        self.write_and_verify_eeprom(buffer)
+        self.write_and_verify_eeprom(buffer, verify_only=verify_only)

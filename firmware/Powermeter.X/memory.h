@@ -9,6 +9,7 @@
 #define MEM_I2C_STATUS_PENDING   +1
 #define MEM_I2C_STATUS_RETRY_ANA +2
 #define MEM_I2C_STATUS_RETRY_DNA +3
+#define MEM_I2C_STATUS_ACKP      +4
 #define MEM_I2C_ERROR_FAIL       -1
 #define MEM_I2C_ERROR_STUCK      -2
 #define MEM_I2C_ERROR_LOST       -3

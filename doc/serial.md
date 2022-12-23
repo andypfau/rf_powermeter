@@ -17,7 +17,8 @@ Press the `Esc` key to enter UI mode.
 	          v
 	| ' | ' | ' | ' | ' | ' | ' |
 	
-	Cont  Avg x16  1000 MHz
+	Cnt  Avg 16  3000 MHz
+
 
 Valid commands:
 
