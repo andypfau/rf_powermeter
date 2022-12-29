@@ -52,6 +52,7 @@ static enum {
 } State;
 static unsigned char DiagFsmState;
 static unsigned char LastUiLine;
+static bool CancelSubstate;
 
 
 void ui_init(void)
@@ -69,6 +70,7 @@ void ui_init(void)
     DiagTemp = 0;
     Remote = 1;
     Error = 0;
+    CancelSubstate = 0;
     
     TMR1_Period16BitSet(2500); // 100 Hz
     TMR1_Start();
@@ -194,7 +196,10 @@ void ui_loop(void)
                         
                         if (Remote)
                             State = Idle;
-                        else
+                        else if (CancelSubstate) {
+                            rf_resume();
+                            State = Redraw;
+                        } else
                             DiagFsmState = 0; // repeat diag
                     }
                     break;
@@ -259,6 +264,7 @@ void ui_loop(void)
                 case 'd':
                     rf_suspend();
                     State = DispDiag;
+                    CancelSubstate = 0;
                     DiagFsmState = 0;
                     break;
                 case 'e':
@@ -288,7 +294,6 @@ void ui_loop(void)
                     State = InputCal;
                     break;
                 case 0:
-                case 'r': // for debugging only
                     rf_stop();
                     Remote = 1;
                     Error = 0;
@@ -307,18 +312,21 @@ void ui_loop(void)
             }
             break;
             
-        case DispHelp:
         case DispDiag:
-            if (usbCmd == 27) {
-                State = Redraw;
-            }
+            if (usbCmd == 27)
+                CancelSubstate = 1;
             break;
             
+        case DispHelp:
         case InputAvg:
         case InputFreq:
         case InputMem:
         case InputCal:
-            if (usbCmd == '\n' || usbCmd == '\r') {
+            if (usbCmd == 27) {
+                Remote = 0;
+                rf_resume();
+                State = Redraw;
+            } else if (usbCmd == '\n' || usbCmd == '\r') {
                 if (State == InputAvg) {
                     int n;
                     if (parse_int(InBuffer, InBufferPos, &n)) {

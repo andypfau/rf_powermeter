@@ -1,6 +1,7 @@
 #include "render.h"
 #include "helpers.h"
 #include "usb.h"
+#include "rfsens.h"
 
 #include <string.h>
 
@@ -44,16 +45,17 @@ void render_reading(bool remote, int32_t reading)
     
     if (remote) {
         
-        len += fixed_to_str(reading, -3, &(StrBuffer[len]));
+        len += fixed_to_str(reading, -3, 3, &(StrBuffer[len]));
         StrBuffer[len++] = '\n';
         
     } else {
         
         len += vt100_home(&(StrBuffer[len]));
 
-        len += fixed_to_str(reading, -3, &(StrBuffer[len]));
-        memcpy(&(StrBuffer[len]), " dB  \r\n\n", 8);
-        len += 8;
+        int digits = (rf_get_avg() > 100) ? 3 : 2;
+        len += fixed_to_str(reading, -3, digits, &(StrBuffer[len]));
+        memcpy(&(StrBuffer[len]), " dBm  \r\n\n", 9);
+        len += 9;
 
         int pos = (60000 + reading) / 2500;
         if (pos <  0) pos =  0;
@@ -174,11 +176,11 @@ void render_diag(bool remote, uint32_t vUsb, uint32_t vAnalog, uint32_t temp)
     
     if (remote) {
         
-        len += fixed_to_str(vUsb, -3, &(StrBuffer[len]));
+        len += fixed_to_str(vUsb, -3, 3, &(StrBuffer[len]));
         StrBuffer[len++] = ';';
-        len += fixed_to_str(vAnalog, -3, &(StrBuffer[len]));
+        len += fixed_to_str(vAnalog, -3, 3, &(StrBuffer[len]));
         StrBuffer[len++] = ';';
-        len += fixed_to_str(temp, -3, &(StrBuffer[len]));
+        len += fixed_to_str(temp, -3, 3, &(StrBuffer[len]));
         StrBuffer[len++] = '\n';
         
     } else {
@@ -187,15 +189,15 @@ void render_diag(bool remote, uint32_t vUsb, uint32_t vAnalog, uint32_t temp)
 
         memcpy(&(StrBuffer[len]), "USB:  ", 6);
         len += 6;
-        len += fixed_to_str(vUsb, -3, &(StrBuffer[len]));
+        len += fixed_to_str(vUsb, -3, 2, &(StrBuffer[len]));
 
         memcpy(&(StrBuffer[len]), "\r\n5V0A: ", 8);
         len += 8;
-        len += fixed_to_str(vAnalog, -3, &(StrBuffer[len]));
+        len += fixed_to_str(vAnalog, -3, 2, &(StrBuffer[len]));
 
         memcpy(&(StrBuffer[len]), "\r\nTemp: ", 8);
         len += 8;
-        len += fixed_to_str(temp, -3, &(StrBuffer[len]));
+        len += fixed_to_str(temp, -3, 1, &(StrBuffer[len]));
     }
     
     usb_set_data(StrBuffer, len);

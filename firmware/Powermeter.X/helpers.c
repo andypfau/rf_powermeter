@@ -50,13 +50,16 @@ int int_to_hex(uint32_t value, char n_digits, char* buffer_8b)
 }
 
 
-int fixed_to_str(long value, int exponent, char* buffer_12b)
+int fixed_to_str(long value, int exponent, int max_decimals, char* buffer_12b)
 {
-    int32_t part, remaining, divider, charCount, currentExponent;
-    bool started;
+    int32_t part, remaining, divider;
+    int charCount, currentExponent, nDecimals;
+    bool started, fracPart;
     
     charCount = 0;
     started = 0;
+    nDecimals = 0;
+    fracPart = 0;
     
     if (value < 0) {
         buffer_12b[charCount++] = '-';
@@ -84,6 +87,13 @@ int fixed_to_str(long value, int exponent, char* buffer_12b)
         if ((exponent != 0) && (exponent == -currentExponent)) {
             buffer_12b[charCount++] = '.';
             started = 1;
+            fracPart = 1;
+        }
+        
+        if (fracPart) {
+            if (nDecimals == max_decimals)
+                break;
+            nDecimals++;
         }
     }
     return charCount;

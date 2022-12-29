@@ -65,7 +65,7 @@ long get_mdb(void)
 
 void rf_init(void)
 {
-    Continuous = 0;
+    Continuous = 1;
     Averages = 16;
     AverageAccu = 0;
     AverageAccuCount = 0; // start

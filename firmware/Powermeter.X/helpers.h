@@ -11,7 +11,7 @@
 
 int int_to_str(long value, char* buffer_11b);
 int int_to_hex(uint32_t value, char n_digits, char* buffer_8b);
-int fixed_to_str(long value, int exponent, char* buffer_12b);
+int fixed_to_str(long value, int exponent, int max_decimals, char* buffer_12b);
 
 bool parse_int(char* buffer, int len, int *result);
 bool parse_hex(char* buffer, int len, uint32_t *result);
