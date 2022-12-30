@@ -87,7 +87,7 @@ void cal_init(void)
     VarShift        = read_uint16(MEM_ADDR_CAL_VAR_SHIFT);
     SlopeShift      = read_uint16(MEM_ADDR_CAL_SLOPE_SHIFT);
     
-    cal_load(898);
+    cal_load(1000);
 }
 
 
